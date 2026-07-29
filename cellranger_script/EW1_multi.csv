@@ -1,0 +1,11 @@
+[gene-expression]
+reference,/exports/eddie/scratch/s2845297/refdata-gex-GRCh38-2020-A
+
+[vdj]
+reference,/exports/eddie/scratch/s2845297/refdata-cellranger-vdj-GRCh38-alts-ensembl-7.0.0
+
+[libraries]
+fastq_id,fastqs,feature_types
+EW1_GEX,/exports/eddie/scratch/s2845297,Gene Expression
+EW1_BCR,/exports/eddie/scratch/s2845297,VDJ
+
