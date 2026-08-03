@@ -2,31 +2,31 @@
 #$ -N cr_multi
 #$ -cwd
 
-# 使用 6 核
+# us 6 cores
 #$ -pe sharedmem 6
 
-# 最长运行时间
+# th maximum running time
 #$ -l h_rt=48:00:00
 
-# 每核 8G，总共 48G
+# each core using 8G, overall using 48G
 #$ -l h_vmem=8G
 
-# Job array：三个样本并行
+# Job array:run 3saple in parallel
 #$ -t 1-3
 
-# 最多同时跑 3 个
+# top running: run 3 sample at one time
 #$ -tc 3
 
-# 日志
+# logs
 #$ -o logs/
 #$ -e logs/
 
-# 邮件通知
+# email notification
 #$ -M s2845297@ed.ac.uk
 #$ -m be
 
 ####################################
-# 初始化环境
+# environent initialization
 ####################################
 
 . /etc/profile.d/modules.sh
@@ -34,7 +34,7 @@
 module load igmm/apps/cellranger/7.0.0
 
 ####################################
-# 路径设置
+# working directory setup
 ####################################
 
 WORKDIR=/exports/eddie/scratch/s2845297
@@ -42,7 +42,7 @@ WORKDIR=/exports/eddie/scratch/s2845297
 cd $WORKDIR
 
 ####################################
-# 样本列表
+# sample list
 ####################################
 
 SAMPLES=("EW1" "EW2" "EW3")
@@ -67,7 +67,7 @@ cellranger multi \
     --localmem=42
 
 ####################################
-# 完成
+# finish notification
 ####################################
 
 echo "====================================="
