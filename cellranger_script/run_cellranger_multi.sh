@@ -22,7 +22,7 @@
 #$ -e logs/
 
 # email notification
-#$ -M s2845297@ed.ac.uk
+#$ -M snumber@ed.ac.uk
 #$ -m be
 
 ####################################
