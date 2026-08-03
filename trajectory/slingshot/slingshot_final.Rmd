@@ -1,0 +1,826 @@
+---
+title: "slingshot_final"
+output: html_document
+---
+
+```{r}
+############################################################
+## EW2 Slingshot trajectory reconstruction
+## Exploratory trajectory analysis using annotated B-cell states
+############################################################
+
+############################
+## 0. Setup
+############################
+
+setwd("/localdisk/home/s2845297/dissertation/trajectory/slingshot")
+
+suppressPackageStartupMessages({
+  library(Seurat)
+  library(SingleCellExperiment)
+  library(slingshot)
+  library(dplyr)
+  library(tibble)
+  library(readr)
+  library(ggplot2)
+  library(ggrepel)
+  library(viridis)
+  library(grid)
+  library(patchwork)
+})
+
+options(stringsAsFactors = FALSE)
+
+############################
+## 1. Paths and parameters
+############################
+
+rds_path <- "/localdisk/home/s2845297/dissertation/trajectory/EW2_annotated.rds"
+
+outdir <- "slingshot_final"
+fig_dir <- file.path(outdir, "figures")
+tab_dir <- file.path(outdir, "tables")
+rds_dir <- file.path(outdir, "rds")
+
+dir.create(outdir, showWarnings = FALSE, recursive = TRUE)
+dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
+dir.create(tab_dir, showWarnings = FALSE, recursive = TRUE)
+dir.create(rds_dir, showWarnings = FALSE, recursive = TRUE)
+
+## Metadata column used as Slingshot cluster label
+cluster_col <- "celltype"
+
+## Metadata column used for figure labels
+label_col <- "celltype"
+
+## Manually defined root cluster
+root_cluster <- "Transitional"
+
+## Use existing Seurat UMAP by default
+rerun_preprocessing <- FALSE
+
+## Low-dimensional representation used by Slingshot
+slingshot_reduction <- "UMAP"
+
+## Output plot size
+plot_width <- 10
+plot_height <- 7
+plot_dpi <- 300
+
+## Save package versions
+packages_used <- c(
+  "Seurat",
+  "SingleCellExperiment",
+  "slingshot",
+  "dplyr",
+  "tibble",
+  "readr",
+  "ggplot2",
+  "ggrepel",
+  "viridis",
+  "patchwork"
+)
+
+package_versions <- data.frame(
+  package = packages_used,
+  version = sapply(packages_used, function(pkg) {
+    as.character(packageVersion(pkg))
+  }),
+  row.names = NULL
+)
+
+write.csv(
+  package_versions,
+  file.path(outdir, "slingshot_package_versions.csv"),
+  row.names = FALSE
+)
+
+writeLines(
+  capture.output(sessionInfo()),
+  file.path(outdir, "sessionInfo_slingshot.txt")
+)
+```
+
+
+```{r}
+############################
+## 2. Colour-blind friendly cell type palette
+############################
+
+celltype_order <- c(
+  "Transitional",
+  "NAIVE 1",
+  "NAIVE 2",
+  "Early-Activation",
+  "IgD+ve Memory",
+  "IgD-ve Memory",
+  "HSP+",
+  "DN2",
+  "ASC 1",
+  "ASC 2",
+  "ASC 3",
+  "Cell-Cycling"
+)
+
+celltype_cols <- c(
+  "Transitional"     = "#332288",
+  "NAIVE 1"          = "#88CCEE",
+  "NAIVE 2"          = "#44AA99",
+  "Early-Activation" = "#117733",
+  "IgD+ve Memory"    = "#999933",
+  "IgD-ve Memory"    = "#DDCC77",
+  "HSP+"             = "#EE7733",
+  "DN2"              = "#CC6677",
+  "ASC 1"            = "#882255",
+  "ASC 2"            = "#AA4499",
+  "ASC 3"            = "#CC3311",
+  "Cell-Cycling"     = "#661100"
+)
+
+lineage_cols <- c(
+  "Lineage_1" = "#000000",
+  "Lineage_2" = "#0072B2",
+  "Lineage_3" = "#D55E00",
+  "Lineage_4" = "#009E73",
+  "Lineage_5" = "#CC79A7",
+  "Lineage_6" = "#999999"
+)
+
+start_col <- "#0072B2"
+end_col <- "#D55E00"
+
+############################
+## 3. Helper functions
+############################
+
+safe_save_plot <- function(plot, filename, width = plot_width, height = plot_height) {
+  ggsave(
+    filename = file.path(fig_dir, filename),
+    plot = plot,
+    width = width,
+    height = height,
+    dpi = plot_dpi,
+    bg = "white"
+  )
+}
+
+extract_clean_slingshot_curves <- function(
+    sce_obj,
+    max_points_per_lineage = 150
+) {
+  curves <- slingCurves(sce_obj)
+
+  if (length(curves) == 0) {
+    stop("No Slingshot curves detected. Please check that slingshot() ran successfully.")
+  }
+
+  curve_list <- lapply(seq_along(curves), function(i) {
+    crv <- curves[[i]]
+    s <- as.data.frame(crv$s)
+
+    if (ncol(s) < 2) {
+      stop("Curve coordinates contain fewer than two dimensions.")
+    }
+
+    s <- s[, 1:2, drop = FALSE]
+    colnames(s) <- c("UMAP_1", "UMAP_2")
+
+    s <- s %>%
+      filter(is.finite(UMAP_1), is.finite(UMAP_2))
+
+    if (nrow(s) < 2) {
+      warning(paste0("Lineage_", i, " contains fewer than two curve points and was skipped."))
+      return(NULL)
+    }
+
+    if (!is.null(crv$ord) && length(crv$ord) == nrow(s)) {
+      s <- s[crv$ord, , drop = FALSE]
+    }
+
+    if (!is.null(crv$lambda) && length(crv$lambda) == nrow(s)) {
+      s$curve_order_value <- crv$lambda
+      s <- s %>% arrange(curve_order_value)
+    } else {
+      s$curve_order_value <- seq_len(nrow(s))
+    }
+
+    s <- s %>%
+      mutate(
+        dx = UMAP_1 - lag(UMAP_1),
+        dy = UMAP_2 - lag(UMAP_2),
+        dist_prev = sqrt(dx^2 + dy^2)
+      ) %>%
+      filter(is.na(dist_prev) | dist_prev > 1e-8) %>%
+      select(-dx, -dy, -dist_prev)
+
+    if (nrow(s) < 2) {
+      warning(paste0("Lineage_", i, " contains fewer than two unique curve points and was skipped."))
+      return(NULL)
+    }
+
+    n_keep <- min(max_points_per_lineage, nrow(s))
+    keep_idx <- unique(round(seq(1, nrow(s), length.out = n_keep)))
+    s <- s[keep_idx, , drop = FALSE]
+
+    s$Lineage <- paste0("Lineage_", i)
+    s$order <- seq_len(nrow(s))
+
+    s
+  })
+
+  curve_df <- bind_rows(curve_list)
+
+  if (is.null(curve_df) || nrow(curve_df) == 0) {
+    stop("No drawable Slingshot curves were available.")
+  }
+
+  curve_df %>%
+    arrange(Lineage, order)
+}
+```
+
+
+```{r}
+############################
+## 4. Load Seurat object
+############################
+
+seu <- readRDS(rds_path)
+
+cat("Loaded Seurat object with", ncol(seu), "cells.\n")
+cat("Available metadata columns:\n")
+print(colnames(seu@meta.data))
+
+if (!cluster_col %in% colnames(seu@meta.data)) {
+  stop("cluster_col not found in Seurat metadata: ", cluster_col)
+}
+
+if (!label_col %in% colnames(seu@meta.data)) {
+  stop("label_col not found in Seurat metadata: ", label_col)
+}
+
+## Ensure celltype order is consistent
+if (cluster_col == "celltype") {
+  seu@meta.data[[cluster_col]] <- factor(
+    as.character(seu@meta.data[[cluster_col]]),
+    levels = celltype_order
+  )
+}
+
+if (label_col == "celltype") {
+  seu@meta.data[[label_col]] <- factor(
+    as.character(seu@meta.data[[label_col]]),
+    levels = celltype_order
+  )
+}
+
+cat("Cluster label distribution:\n")
+print(table(seu@meta.data[[cluster_col]], useNA = "ifany"))
+```
+
+
+```{r}
+############################
+## 6. Convert to SingleCellExperiment
+############################
+
+sce <- as.SingleCellExperiment(seu)
+
+reducedDims(sce)$UMAP <- Embeddings(seu, "umap")
+
+if ("pca" %in% Reductions(seu)) {
+  reducedDims(sce)$PCA <- Embeddings(seu, "pca")
+}
+
+colData(sce)$cluster_for_slingshot <- factor(
+  as.character(seu@meta.data[[cluster_col]])
+)
+
+clus_levels <- levels(colData(sce)$cluster_for_slingshot)
+
+cat("Slingshot cluster levels:\n")
+print(clus_levels)
+
+if (!root_cluster %in% clus_levels) {
+  stop(
+    paste0(
+      "root_cluster = '", root_cluster,
+      "' is not present in cluster_for_slingshot. Please check cluster_col or root_cluster."
+    )
+  )
+}
+
+############################
+## 7. Run Slingshot
+############################
+
+sce <- slingshot(
+  sce,
+  clusterLabels = "cluster_for_slingshot",
+  reducedDim = slingshot_reduction,
+  start.clus = root_cluster
+)
+
+cat("Detected Slingshot lineages:\n")
+print(slingLineages(sce))
+
+saveRDS(
+  sce,
+  file.path(rds_dir, "sce_slingshot.rds")
+)
+
+############################
+## 8. Extract pseudotime and lineage assignment
+############################
+
+pt <- slingPseudotime(sce, na = FALSE)
+cw <- slingCurveWeights(sce)
+
+pt_df <- as.data.frame(pt)
+cw_df <- as.data.frame(cw)
+
+colnames(pt_df) <- paste0("pt_lineage_", seq_len(ncol(pt_df)))
+colnames(cw_df) <- paste0("cw_lineage_", seq_len(ncol(cw_df)))
+
+meta_df <- seu@meta.data %>%
+  rownames_to_column("cell")
+
+traj_df <- bind_cols(meta_df, pt_df, cw_df)
+
+cw_mat <- as.matrix(cw_df)
+pt_mat <- as.matrix(pt_df)
+
+traj_df$assigned_lineage <- apply(cw_mat, 1, function(x) {
+  if (all(is.na(x)) || all(x == 0, na.rm = TRUE)) {
+    return(NA_character_)
+  }
+  paste0("Lineage_", which.max(x))
+})
+
+traj_df$assigned_pseudotime <- sapply(seq_len(nrow(traj_df)), function(i) {
+  lin <- traj_df$assigned_lineage[i]
+
+  if (is.na(lin)) {
+    return(NA_real_)
+  }
+
+  idx <- as.numeric(gsub("Lineage_", "", lin))
+
+  if (is.na(idx) || idx > ncol(pt_mat)) {
+    return(NA_real_)
+  }
+
+  pt_mat[i, idx]
+})
+
+seu$assigned_lineage <- traj_df$assigned_lineage[
+  match(colnames(seu), traj_df$cell)
+]
+
+seu$assigned_pseudotime <- traj_df$assigned_pseudotime[
+  match(colnames(seu), traj_df$cell)
+]
+
+write.csv(
+  traj_df,
+  file = file.path(tab_dir, "EW2_slingshot_cell_level_results.csv"),
+  row.names = FALSE
+)
+
+saveRDS(
+  seu,
+  file.path(rds_dir, "seurat_with_slingshot_results.rds")
+)
+```
+
+
+```{r}
+############################
+## 9. Prepare plotting data
+############################
+
+umap_mat <- reducedDims(sce)$UMAP
+
+meta_plot_df <- seu@meta.data %>%
+  rownames_to_column("cell") %>%
+  mutate(
+    cluster_label = as.character(.data[[cluster_col]]),
+    plot_label = as.character(.data[[label_col]])
+  ) %>%
+  select(
+    cell,
+    cluster_label,
+    plot_label,
+    assigned_pseudotime,
+    assigned_lineage
+  )
+
+umap_plot_df <- data.frame(
+  cell = rownames(umap_mat),
+  UMAP_1 = umap_mat[, 1],
+  UMAP_2 = umap_mat[, 2],
+  stringsAsFactors = FALSE
+)
+
+plot_df <- umap_plot_df %>%
+  left_join(meta_plot_df, by = "cell") %>%
+  mutate(
+    cluster_label = factor(cluster_label, levels = celltype_order),
+    plot_label = factor(plot_label, levels = celltype_order),
+    assigned_pseudotime = as.numeric(assigned_pseudotime),
+    assigned_lineage = factor(assigned_lineage)
+  )
+
+write.csv(
+  plot_df,
+  file.path(tab_dir, "EW2_slingshot_plotting_dataframe.csv"),
+  row.names = FALSE
+)
+
+label_df <- plot_df %>%
+  filter(!is.na(plot_label)) %>%
+  group_by(plot_label) %>%
+  summarise(
+    UMAP_1 = median(UMAP_1, na.rm = TRUE),
+    UMAP_2 = median(UMAP_2, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+############################
+## 10. Extract Slingshot curves and arrows
+############################
+
+curve_df_clean <- extract_clean_slingshot_curves(
+  sce,
+  max_points_per_lineage = 150
+)
+
+write.csv(
+  curve_df_clean,
+  file.path(tab_dir, "EW2_slingshot_clean_curve_coordinates.csv"),
+  row.names = FALSE
+)
+
+arrow_df <- curve_df_clean %>%
+  group_by(Lineage) %>%
+  arrange(order, .by_group = TRUE) %>%
+  summarise(
+    x = UMAP_1[max(1, floor(n() * 0.88))],
+    y = UMAP_2[max(1, floor(n() * 0.88))],
+    xend = UMAP_1[n()],
+    yend = UMAP_2[n()],
+    .groups = "drop"
+  )
+
+endpoint_df <- curve_df_clean %>%
+  group_by(Lineage) %>%
+  arrange(order, .by_group = TRUE) %>%
+  summarise(
+    start_x = UMAP_1[1],
+    start_y = UMAP_2[1],
+    end_x = UMAP_1[n()],
+    end_y = UMAP_2[n()],
+    .groups = "drop"
+  )
+
+write.csv(
+  arrow_df,
+  file.path(tab_dir, "EW2_slingshot_arrow_coordinates.csv"),
+  row.names = FALSE
+)
+
+write.csv(
+  endpoint_df,
+  file.path(tab_dir, "EW2_slingshot_endpoint_coordinates.csv"),
+  row.names = FALSE
+)
+
+saveRDS(
+  curve_df_clean,
+  file.path(rds_dir, "clean_slingshot_curve_df.rds")
+)
+```
+
+
+```{r}
+############################
+## 11. Diagnostic curve plot
+############################
+
+p_check_curve <- ggplot() +
+  geom_point(
+    data = plot_df,
+    aes(x = UMAP_1, y = UMAP_2),
+    color = "grey85",
+    size = 0.45,
+    alpha = 0.7
+  ) +
+  geom_path(
+    data = curve_df_clean,
+    aes(x = UMAP_1, y = UMAP_2, group = Lineage),
+    color = "black",
+    linewidth = 0.7,
+    alpha = 0.85
+  ) +
+  geom_segment(
+    data = arrow_df,
+    aes(x = x, y = y, xend = xend, yend = yend),
+    arrow = arrow(length = unit(0.18, "cm"), type = "closed"),
+    color = "black",
+    linewidth = 0.75,
+    alpha = 0.9
+  ) +
+  coord_equal() +
+  theme_bw(base_size = 12) +
+  theme(panel.grid = element_blank()) +
+  labs(
+    title = "Slingshot trajectory curve diagnostic plot",
+    x = "UMAP 1",
+    y = "UMAP 2"
+  )
+
+safe_save_plot(
+  p_check_curve,
+  "01_slingshot_curve_diagnostic.png",
+  width = 8,
+  height = 6
+)
+```
+
+
+```{r}
+############################
+## 12. Final plot 1: pseudotime and Slingshot curves
+############################
+
+p_pseudotime_arrow <- ggplot(
+  plot_df,
+  aes(x = UMAP_1, y = UMAP_2, color = assigned_pseudotime)
+) +
+  geom_point(size = 0.6, alpha = 0.9) +
+  scale_color_viridis_c(
+    option = "cividis",
+    na.value = "grey85",
+    name = "Pseudotime"
+  ) +
+  geom_path(
+    data = curve_df_clean,
+    aes(x = UMAP_1, y = UMAP_2, group = Lineage),
+    inherit.aes = FALSE,
+    color = "black",
+    linewidth = 0.7,
+    alpha = 0.85
+  ) +
+  geom_segment(
+    data = arrow_df,
+    aes(x = x, y = y, xend = xend, yend = yend),
+    inherit.aes = FALSE,
+    arrow = arrow(length = unit(0.2, "cm"), type = "closed"),
+    color = "black",
+    linewidth = 0.75,
+    alpha = 0.9
+  ) +
+  geom_point(
+    data = endpoint_df,
+    aes(x = start_x, y = start_y),
+    inherit.aes = FALSE,
+    color = start_col,
+    size = 2.8
+  ) +
+  geom_point(
+    data = endpoint_df,
+    aes(x = end_x, y = end_y),
+    inherit.aes = FALSE,
+    color = end_col,
+    size = 2.8
+  ) +
+  geom_text_repel(
+    data = endpoint_df,
+    aes(x = start_x, y = start_y, label = paste0(Lineage, " start")),
+    inherit.aes = FALSE,
+    color = start_col,
+    size = 3.1,
+    fontface = "bold",
+    max.overlaps = Inf
+  ) +
+  geom_text_repel(
+    data = endpoint_df,
+    aes(x = end_x, y = end_y, label = paste0(Lineage, " end")),
+    inherit.aes = FALSE,
+    color = end_col,
+    size = 3.1,
+    fontface = "bold",
+    max.overlaps = Inf
+  ) +
+  coord_equal() +
+  theme_bw(base_size = 12) +
+  theme(
+    panel.grid = element_blank(),
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    legend.position = "right"
+  ) +
+  labs(
+    title = "Slingshot trajectory coloured by pseudotime",
+    x = "UMAP 1",
+    y = "UMAP 2"
+  )
+
+safe_save_plot(
+  p_pseudotime_arrow,
+  "02_slingshot_pseudotime_arrow.png"
+)
+
+ggsave(
+  filename = file.path(fig_dir, "02_slingshot_pseudotime_arrow.pdf"),
+  plot = p_pseudotime_arrow,
+  width = plot_width,
+  height = plot_height,
+  bg = "white"
+)
+```
+
+
+```{r}
+############################
+## 13. Final plot 2: pseudotime, arrows and cell type labels
+############################
+
+p_pseudotime_arrow_label <- p_pseudotime_arrow +
+  geom_text_repel(
+    data = label_df,
+    aes(x = UMAP_1, y = UMAP_2, label = plot_label),
+    inherit.aes = FALSE,
+    color = "black",
+    size = 3.5,
+    fontface = "bold",
+    box.padding = 0.5,
+    point.padding = 0.3,
+    max.overlaps = Inf
+  ) +
+  labs(
+    title = "Slingshot trajectory coloured by pseudotime with cell type labels"
+  )
+
+safe_save_plot(
+  p_pseudotime_arrow_label,
+  "03_slingshot_pseudotime_arrow_labels.png"
+)
+
+ggsave(
+  filename = file.path(fig_dir, "03_slingshot_pseudotime_arrow_labels.pdf"),
+  plot = p_pseudotime_arrow_label,
+  width = plot_width,
+  height = plot_height,
+  bg = "white"
+)
+
+############################
+## 14. Final plot 3: cell type colours and Slingshot curves
+############################
+
+## Restrict colours to labels actually present in the data
+present_labels <- levels(droplevels(plot_df$plot_label))
+celltype_cols_present <- celltype_cols[present_labels]
+
+p_celltype_arrow <- ggplot(
+  plot_df,
+  aes(x = UMAP_1, y = UMAP_2, color = plot_label)
+) +
+  geom_point(size = 0.6, alpha = 0.85) +
+  scale_color_manual(
+    values = celltype_cols_present,
+    na.value = "grey85",
+    name = label_col,
+    drop = FALSE
+  ) +
+  guides(
+    color = guide_legend(
+      override.aes = list(size = 4, alpha = 1)
+    )
+  ) +
+  geom_path(
+    data = curve_df_clean,
+    aes(x = UMAP_1, y = UMAP_2, group = Lineage),
+    inherit.aes = FALSE,
+    color = "black",
+    linewidth = 0.8,
+    alpha = 0.85
+  ) +
+  geom_segment(
+    data = arrow_df,
+    aes(x = x, y = y, xend = xend, yend = yend),
+    inherit.aes = FALSE,
+    arrow = arrow(length = unit(0.2, "cm"), type = "closed"),
+    color = "black",
+    linewidth = 0.85,
+    alpha = 0.9
+  ) +
+  geom_text_repel(
+    data = label_df,
+    aes(x = UMAP_1, y = UMAP_2, label = plot_label),
+    inherit.aes = FALSE,
+    color = "black",
+    size = 3.5,
+    fontface = "bold",
+    box.padding = 0.5,
+    point.padding = 0.3,
+    max.overlaps = Inf
+  ) +
+  geom_point(
+    data = endpoint_df,
+    aes(x = start_x, y = start_y),
+    inherit.aes = FALSE,
+    color = start_col,
+    size = 2.8
+  ) +
+  geom_point(
+    data = endpoint_df,
+    aes(x = end_x, y = end_y),
+    inherit.aes = FALSE,
+    color = end_col,
+    size = 2.8
+  ) +
+  geom_text_repel(
+    data = endpoint_df,
+    aes(x = start_x, y = start_y, label = paste0(Lineage, " start")),
+    inherit.aes = FALSE,
+    color = start_col,
+    size = 3.1,
+    fontface = "bold",
+    max.overlaps = Inf
+  ) +
+  geom_text_repel(
+    data = endpoint_df,
+    aes(x = end_x, y = end_y, label = paste0(Lineage, " end")),
+    inherit.aes = FALSE,
+    color = end_col,
+    size = 3.1,
+    fontface = "bold",
+    max.overlaps = Inf
+  ) +
+  coord_equal() +
+  theme_bw(base_size = 12) +
+  theme(
+    panel.grid = element_blank(),
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    legend.position = "right"
+  ) +
+  labs(
+    title = "Slingshot trajectory coloured by annotated B-cell states",
+    x = "UMAP 1",
+    y = "UMAP 2"
+  )
+
+safe_save_plot(
+  p_celltype_arrow,
+  "04_slingshot_celltype_arrow.png"
+)
+
+ggsave(
+  filename = file.path(fig_dir, "04_slingshot_celltype_arrow.pdf"),
+  plot = p_celltype_arrow,
+  width = plot_width,
+  height = plot_height,
+  bg = "white"
+)
+```
+
+
+```{r}
+############################
+## 15. Combined figure
+############################
+
+combined_plot <- p_celltype_arrow | p_pseudotime_arrow_label
+
+ggsave(
+  filename = file.path(fig_dir, "05_combined_celltype_pseudotime_arrow.pdf"),
+  plot = combined_plot,
+  width = 16,
+  height = 7,
+  bg = "white"
+)
+
+ggsave(
+  filename = file.path(fig_dir, "05_combined_celltype_pseudotime_arrow.png"),
+  plot = combined_plot,
+  width = 16,
+  height = 7,
+  dpi = plot_dpi,
+  bg = "white"
+)
+```
+
+
+```{r}
+saveRDS(
+  sce,
+  file.path(rds_dir, "sce_slingshot_final.rds")
+)
+
+cat("Slingshot trajectory reconstruction completed.\n")
+cat("Figures saved to:", fig_dir, "\n")
+cat("Tables saved to:", tab_dir, "\n")
+cat("RDS files saved to:", rds_dir, "\n")
+```
+
