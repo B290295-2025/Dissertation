@@ -1,0 +1,29 @@
+"clone_subgroup_id","size","n_cluster","clusters","in_formatClones","in_getTrees"
+"581_1",10,4,"ASC 2; IgD+ve Memory; NAIVE 1; Transitional",FALSE,FALSE
+"874_1",7,3,"IgD-ve Memory; IgD+ve Memory; NAIVE 1",FALSE,FALSE
+"1018_1",4,3,"IgD-ve Memory; IgD+ve Memory; NAIVE 1",FALSE,FALSE
+"1252_1",4,3,"IgD-ve Memory; IgD+ve Memory; NAIVE 1",FALSE,FALSE
+"1800_1",4,3,"IgD-ve Memory; IgD+ve Memory; NAIVE 1",FALSE,FALSE
+"315_1",4,4,"ASC 2; Early-Activation; HSP+; IgD-ve Memory",FALSE,FALSE
+"1252_2",3,3,"ASC 2; IgD+ve Memory; NAIVE 1",FALSE,FALSE
+"1518_1",3,3,"ASC 1; DN2; NAIVE 1",FALSE,FALSE
+"1756_1",3,3,"ASC 2; IgD-ve Memory; IgD+ve Memory",FALSE,FALSE
+"323_1",3,3,"Cell-Cycling; Early-Activation; NAIVE 1",FALSE,FALSE
+"370_1",3,3,"HSP+; IgD-ve Memory; IgD+ve Memory",FALSE,FALSE
+"1844_1",31,4,"ASC 2; Cell-Cycling; IgD-ve Memory; IgD+ve Memory",TRUE,TRUE
+"1222_1",21,4,"DN2; HSP+; IgD+ve Memory; NAIVE 2",TRUE,TRUE
+"1386_1",17,3,"ASC 2; ASC 3; IgD+ve Memory",TRUE,TRUE
+"898_1",16,3,"ASC 1; ASC 2; NAIVE 1",TRUE,TRUE
+"1446_1",14,3,"IgD-ve Memory; IgD+ve Memory; NAIVE 2",TRUE,TRUE
+"502_1",13,4,"ASC 1; ASC 3; Cell-Cycling; IgD+ve Memory",TRUE,TRUE
+"514_1",13,3,"HSP+; IgD-ve Memory; IgD+ve Memory",TRUE,TRUE
+"1042_1",11,3,"ASC 2; IgD+ve Memory; NAIVE 2",TRUE,TRUE
+"1081_1",9,3,"ASC 1; ASC 2; NAIVE 1",TRUE,TRUE
+"1557_1",9,3,"ASC 1; ASC 2; NAIVE 1",TRUE,TRUE
+"501_1",9,3,"ASC 1; ASC 2; NAIVE 1",TRUE,TRUE
+"1659_1",8,3,"ASC 1; ASC 2; ASC 3",TRUE,TRUE
+"404_1",8,3,"ASC 2; IgD-ve Memory; IgD+ve Memory",TRUE,TRUE
+"1029_1",6,3,"ASC 1; IgD-ve Memory; IgD+ve Memory",TRUE,TRUE
+"1540_1",6,3,"ASC 2; HSP+; NAIVE 1",TRUE,TRUE
+"343_1",6,3,"ASC 1; ASC 2; NAIVE 1",TRUE,TRUE
+"1816_1",5,3,"ASC 2; IgD-ve Memory; IgD+ve Memory",TRUE,TRUE

@@ -1,0 +1,81 @@
+[1] "Read in 1305 from 17 fasta files"
+Initial BCR rows: 9315 
+Rows after productive filtering: 9315 
+Rows after V/J/C-locus consistency filtering: 8619 
+Chain distribution after filtering:
+
+ IGH  IGK  IGL 
+4117 2866 1636 
+Unique cell_id_unique: 5140 
+Cells with multiple IGH chains: 144 
+Rows after removing cells with multiple IGH chains: 8150 
+Rows from cells with both IGH and light chain: 6195 
+Cells with exactly 1 IGH and 1 light chain: 2949 
+Rows after strict paired heavy-light filtering: 5898 
+Chain distribution after strict paired filtering:
+
+ IGH  IGK  IGL 
+2949 1840 1109 
+BCR-Seurat annotation match rate: 0.9816887 
+Rows after adding GEX annotation and removing NA: 5790 
+Running defineClonesScoper in single cell mode
+Rows after hierarchicalClones: 5790 
+Rows after resolveLightChains: 5790 
+Distribution of number of transcriptomic clusters per clone:
+
+   1    2    3    4    5 
+1757  104   26    8    3 
+Rows after createGermlines: 5790 
+IGH rows used for SHM calculation: 2895 
+Number of clone_subgroup_id spanning >=3 B-cell states: 28 
+IGH rows used for Dowser tree construction: 2895 
+Number of clone_subgroup_id used for Dowser: 2009 
+Number of clones after formatClones: 28 
+Number of trees after getTrees: 28 
+[1] "1844_1" "1386_1" "514_1"  "898_1"  "1222_1" "502_1" 
+Candidate clones spanning >=3 B-cell states: 28 
+Candidates included by formatClones: 17 
+Candidates successfully reconstructed by getTrees: 17 
+Number of Dowser trees to plot: 17 
+Plotting Dowser tree 1/17: 1844_1
+Plotting Dowser tree 2/17: 1222_1
+Plotting Dowser tree 3/17: 1386_1
+Plotting Dowser tree 4/17: 898_1
+Plotting Dowser tree 5/17: 1446_1
+Plotting Dowser tree 6/17: 502_1
+Plotting Dowser tree 7/17: 514_1
+Plotting Dowser tree 8/17: 1042_1
+Plotting Dowser tree 9/17: 1081_1
+Plotting Dowser tree 10/17: 1557_1
+Plotting Dowser tree 11/17: 501_1
+Plotting Dowser tree 12/17: 1659_1
+Plotting Dowser tree 13/17: 404_1
+Plotting Dowser tree 14/17: 1029_1
+Plotting Dowser tree 15/17: 1540_1
+Plotting Dowser tree 16/17: 343_1
+Plotting Dowser tree 17/17: 1816_1
+Dowser tree plotting completed.
+# A tibble: 17 × 5
+   clone_subgroup_id status file_png                              file_pdf error
+   <chr>             <chr>  <chr>                                 <chr>    <chr>
+ 1 1844_1            saved  /data/heavy_light/tree/dowser_tree_1… /data/h… <NA> 
+ 2 1222_1            saved  /data/heavy_light/tree/dowser_tree_1… /data/h… <NA> 
+ 3 1386_1            saved  /data/heavy_light/tree/dowser_tree_1… /data/h… <NA> 
+ 4 898_1             saved  /data/heavy_light/tree/dowser_tree_8… /data/h… <NA> 
+ 5 1446_1            saved  /data/heavy_light/tree/dowser_tree_1… /data/h… <NA> 
+ 6 502_1             saved  /data/heavy_light/tree/dowser_tree_5… /data/h… <NA> 
+ 7 514_1             saved  /data/heavy_light/tree/dowser_tree_5… /data/h… <NA> 
+ 8 1042_1            saved  /data/heavy_light/tree/dowser_tree_1… /data/h… <NA> 
+ 9 1081_1            saved  /data/heavy_light/tree/dowser_tree_1… /data/h… <NA> 
+10 1557_1            saved  /data/heavy_light/tree/dowser_tree_1… /data/h… <NA> 
+11 501_1             saved  /data/heavy_light/tree/dowser_tree_5… /data/h… <NA> 
+12 1659_1            saved  /data/heavy_light/tree/dowser_tree_1… /data/h… <NA> 
+13 404_1             saved  /data/heavy_light/tree/dowser_tree_4… /data/h… <NA> 
+14 1029_1            saved  /data/heavy_light/tree/dowser_tree_1… /data/h… <NA> 
+15 1540_1            saved  /data/heavy_light/tree/dowser_tree_1… /data/h… <NA> 
+16 343_1             saved  /data/heavy_light/tree/dowser_tree_3… /data/h… <NA> 
+17 1816_1            saved  /data/heavy_light/tree/dowser_tree_1… /data/h… <NA> 
+All Immcantation, SHM and Dowser analyses completed.
+Main output directory: /data/heavy_light 
+SHM plot directory: /data/heavy_light/SHM_plots 
+Dowser tree directory: /data/heavy_light/tree 
