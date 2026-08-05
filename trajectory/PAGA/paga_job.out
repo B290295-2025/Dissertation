@@ -1,0 +1,132 @@
+start：
+Wed Aug  5 01:13:51 PM BST 2026
+running node：
+node1h16.ecdf.ed.ac.uk
+current working directory：
+/exports/eddie/scratch/s2845297/PAGA
+Python:
+/exports/eddie/scratch/s2845297/conda_envs/scanpy_paga/bin/python
+test scanpy:
+1.10.4
+check input files:
+-rw-r--r-- 1 s2845297 eddie_users 1.5M Aug  5 12:35 EW2_metadata_expression_only.csv
+-rw-r--r-- 1 s2845297 eddie_users 26M Aug  5 12:35 EW2_pca_expression_only.csv
+-rw-r--r-- 1 s2845297 eddie_users 752K Aug  5 12:35 EW2_umap_expression_only.csv
+run PAGA:
+start：
+Wed Aug  5 01:20:50 PM BST 2026
+running node：
+node1h23.ecdf.ed.ac.uk
+current working directory：
+/exports/eddie/scratch/s2845297/PAGA
+Python:
+/exports/eddie/scratch/s2845297/conda_envs/scanpy_paga/bin/python
+test scanpy:
+1.10.4
+check input files:
+-rw-r--r-- 1 s2845297 eddie_users 1.5M Aug  5 12:35 EW2_metadata_expression_only.csv
+-rw-r--r-- 1 s2845297 eddie_users 26M Aug  5 12:35 EW2_pca_expression_only.csv
+-rw-r--r-- 1 s2845297 eddie_users 752K Aug  5 12:35 EW2_umap_expression_only.csv
+run PAGA:
+Loading Seurat-exported embeddings and metadata
+No BCR/TCR-like metadata columns detected for removal.
+AnnData object with n_obs × n_vars = 13429 × 1
+    obs: 'orig.ident', 'nCount_RNA', 'nFeature_RNA', 'percent.mt', 'RNA_snn_res.0.1', 'RNA_snn_res.0.2', 'RNA_snn_res.0.3', 'RNA_snn_res.0.4', 'RNA_snn_res.0.5', 'RNA_snn_res.0.6', 'RNA_snn_res.0.8', 'RNA_snn_res.1', 'RNA_snn_res.1.2', 'seurat_clusters', 'celltype', 'assigned_lineage', 'assigned_pseudotime'
+    uns: 'paga_input', 'celltype_colors'
+    obsm: 'X_pca', 'X_umap_seurat'
+
+Group counts:
+celltype
+IgD-ve Memory       3040
+IgD+ve Memory       2708
+NAIVE 1             1943
+NAIVE 2             1776
+ASC 2               1618
+DN2                  597
+HSP+                 561
+Cell-Cycling         322
+Early-Activation     279
+ASC 3                221
+Transitional         189
+ASC 1                175
+Name: count, dtype: int64
+
+Running PAGA using receptor-gene-excluded Seurat PCA embeddings
+
+Computing neighbours using Seurat PCA embeddings stored in adata.obsm['X_pca']
+Cells: 13429
+PCA dimensions used: 100
+n_neighbors: 15
+
+Running PAGA
+
+Computing PAGA layout position
+
+Computing UMAP initialized by PAGA
+
+Saving PAGA graph and UMAP plots
+
+Saved h5ad: paga_expression_only/h5ad/EW2_paga_expression_only_paga_final.h5ad
+PAGA expression-only graph-abstraction analysis completed.
+finish：
+Wed Aug  5 01:21:44 PM BST 2026
+start：
+Wed Aug  5 01:46:46 PM BST 2026
+running node：
+node1j26.ecdf.ed.ac.uk
+current working directory：
+/exports/eddie/scratch/s2845297/PAGA
+Python:
+/exports/eddie/scratch/s2845297/conda_envs/scanpy_paga/bin/python
+test scanpy:
+1.10.4
+check input files:
+-rw-r--r-- 1 s2845297 eddie_users 1.5M Aug  5 12:35 EW2_metadata_expression_only.csv
+-rw-r--r-- 1 s2845297 eddie_users 26M Aug  5 12:35 EW2_pca_expression_only.csv
+-rw-r--r-- 1 s2845297 eddie_users 752K Aug  5 12:35 EW2_umap_expression_only.csv
+run PAGA:
+Loading Seurat-exported embeddings and metadata
+No BCR/TCR-like metadata columns detected.
+AnnData object with n_obs × n_vars = 13429 × 1
+    obs: 'orig.ident', 'nCount_RNA', 'nFeature_RNA', 'percent.mt', 'RNA_snn_res.0.1', 'RNA_snn_res.0.2', 'RNA_snn_res.0.3', 'RNA_snn_res.0.4', 'RNA_snn_res.0.5', 'RNA_snn_res.0.6', 'RNA_snn_res.0.8', 'RNA_snn_res.1', 'RNA_snn_res.1.2', 'seurat_clusters', 'celltype', 'assigned_lineage', 'assigned_pseudotime'
+    uns: 'celltype_colors'
+    obsm: 'X_pca', 'X_umap_seurat'
+
+Group counts:
+celltype
+IgD-ve Memory       3040
+IgD+ve Memory       2708
+NAIVE 1             1943
+NAIVE 2             1776
+ASC 2               1618
+DN2                  597
+HSP+                 561
+Cell-Cycling         322
+Early-Activation     279
+ASC 3                221
+Transitional         189
+ASC 1                175
+Name: count, dtype: int64
+
+Running PAGA using Seurat PCA embeddings
+
+Computing neighbours using Seurat-exported PCA embeddings
+
+Running PAGA
+
+Computing PAGA layout position
+
+Computing UMAP initialized by PAGA
+
+Running optional DPT pseudotime
+
+Running DPT pseudotime from root group: NAIVE 2
+Selected DPT root cell: AATCCAGGTATCAGTC-1
+DPT root strategy: centroid
+
+Saving PAGA graph and UMAP plots
+
+Saved h5ad: /exports/eddie/scratch/s2845297/PAGA/paga_expression_only_dpt/h5ad/EW2_paga_expression_only_paga_final.h5ad
+PAGA analysis completed.
+finish：
+Wed Aug  5 01:47:44 PM BST 2026

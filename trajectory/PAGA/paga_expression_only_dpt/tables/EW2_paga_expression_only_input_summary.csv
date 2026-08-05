@@ -1,0 +1,10 @@
+metric,value
+metadata_rows_before_alignment,13429
+pca_rows_before_alignment,13429
+common_cells_before_group_filter,13429
+cells_after_group_filter,13429
+available_pca_columns,100
+pca_columns_used,100
+group_col,celltype
+celltype_col,celltype
+has_seurat_umap,True

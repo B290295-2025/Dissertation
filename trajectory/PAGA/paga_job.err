@@ -1,0 +1,55 @@
+Traceback (most recent call last):
+  File "/exports/eddie/scratch/s2845297/PAGA/paga_final_script.py", line 729, in <module>
+    main()
+  File "/exports/eddie/scratch/s2845297/PAGA/paga_final_script.py", line 673, in main
+    fig_dir, table_dir, h5ad_dir = make_dirs(args.outdir)
+  File "/exports/eddie/scratch/s2845297/PAGA/paga_final_script.py", line 223, in make_dirs
+    os.makedirs(fig_dir, exist_ok=True)
+  File "/exports/eddie/scratch/s2845297/conda_envs/scanpy_paga/lib/python3.10/os.py", line 215, in makedirs
+    makedirs(head, exist_ok=exist_ok)
+  File "/exports/eddie/scratch/s2845297/conda_envs/scanpy_paga/lib/python3.10/os.py", line 225, in makedirs
+    mkdir(name, mode)
+PermissionError: [Errno 13] Permission denied: '/paga_expression_only'
+computing neighbors
+    finished: added to `.uns['neighbors']`
+    `.obsp['distances']`, distances for each pair of neighbors
+    `.obsp['connectivities']`, weighted adjacency matrix (0:00:30)
+running PAGA
+    finished: added
+    'paga/connectivities', connectivities adjacency (adata.uns)
+    'paga/connectivities_tree', connectivities subtree (adata.uns) (0:00:00)
+--> added 'pos', the PAGA positions (adata.uns['paga'])
+computing UMAP
+    finished: added
+    'X_umap', UMAP coordinates (adata.obsm)
+    'umap', UMAP parameters (adata.uns) (0:00:08)
+--> added 'pos', the PAGA positions (adata.uns['paga'])
+--> added 'pos', the PAGA positions (adata.uns['paga'])
+computing neighbors
+    finished: added to `.uns['neighbors']`
+    `.obsp['distances']`, distances for each pair of neighbors
+    `.obsp['connectivities']`, weighted adjacency matrix (0:00:31)
+running PAGA
+    finished: added
+    'paga/connectivities', connectivities adjacency (adata.uns)
+    'paga/connectivities_tree', connectivities subtree (adata.uns) (0:00:00)
+--> added 'pos', the PAGA positions (adata.uns['paga'])
+computing UMAP
+    finished: added
+    'X_umap', UMAP coordinates (adata.obsm)
+    'umap', UMAP parameters (adata.uns) (0:00:09)
+computing Diffusion Maps using n_comps=15(=n_dcs)
+computing transitions
+    finished (0:00:00)
+    eigenvalues of transition matrix
+    [1.         0.9966549  0.9849011  0.9753443  0.9687626  0.9582399
+     0.9560456  0.9514722  0.9423547  0.9382509  0.9366753  0.9276647
+     0.9268894  0.9245675  0.92081606]
+    finished: added
+    'X_diffmap', diffmap coordinates (adata.obsm)
+    'diffmap_evals', eigenvalues of transition matrix (adata.uns) (0:00:00)
+computing Diffusion Pseudotime using n_dcs=10
+    finished: added
+    'dpt_pseudotime', the pseudotime (adata.obs) (0:00:00)
+--> added 'pos', the PAGA positions (adata.uns['paga'])
+--> added 'pos', the PAGA positions (adata.uns['paga'])
