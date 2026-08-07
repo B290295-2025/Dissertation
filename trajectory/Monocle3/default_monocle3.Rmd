@@ -1,0 +1,742 @@
+---
+title: "final_monocle3"
+output: html_document
+---
+
+```{r}
+############################################################
+## EW2 Monocle3 trajectory reconstruction
+## Expression-only exploratory trajectory analysis
+############################################################
+
+############################
+## 0. Setup
+############################
+
+setwd("/localdisk/home/s2845297/dissertation/trajectory/monocle3_default")
+
+suppressPackageStartupMessages({
+  library(Seurat)
+  library(SeuratObject)
+  library(monocle3)
+  library(SingleCellExperiment)
+  library(Matrix)
+  library(dplyr)
+  library(tibble)
+  library(readr)
+  library(ggplot2)
+  library(patchwork)
+  library(viridis)
+  library(igraph)
+})
+
+options(stringsAsFactors = FALSE)
+
+## Save session information
+writeLines(
+  capture.output(sessionInfo()),
+  "sessionInfo_monocle3.txt"
+)
+
+
+############################
+## 1. Paths and parameters
+############################
+
+seurat_rds <- "/localdisk/home/s2845297/dissertation/trajectory/EW2_annotated.rds"
+
+outdir  <- "/localdisk/home/s2845297/dissertation/trajectory/monocle3_default"
+fig_dir <- file.path(outdir, "figures")
+tab_dir <- file.path(outdir, "tables")
+rds_dir <- file.path(outdir, "rds")
+
+dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
+dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(tab_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(rds_dir, recursive = TRUE, showWarnings = FALSE)
+
+sample_col <- "orig.ident"
+target_sample <- "EW2"
+assay_use <- "RNA"
+
+## Exclude BCR/TCR receptor genes from trajectory reconstruction
+exclude_receptor_genes <- TRUE
+
+## Monocle3 parameters
+min_cells_expressed <- 10
+num_dim <- 100
+cores <- 8
+
+## Cell annotation column from Seurat
+celltype_col <- "celltype"
+
+## Expression-only root selection markers
+## These markers do not include BCR clone, isotype, SHM or receptor sequence information.
+naive_root_markers <- c(
+  "TCL1A", "IL4R", "CCR7", "SELL", "FCER2",
+  "CD55", "CD72", "MS4A1", "CD79A", "CD79B"
+)
+
+plasma_markers <- c(
+  "PRDM1", "XBP1", "IRF4", "MZB1", "JCHAIN", "SDC1", "DERL3"
+)
+
+activated_markers <- c(
+  "AICDA", "BCL6", "RGS13", "CD83", "MKI67", "TOP2A"
+)
+
+min_root_cells <- 20
+root_cell_fraction <- 0.05
+
+
+############################
+## 2. Colour-blind friendly palettes
+############################
+
+celltype_cols <- c(
+  "Transitional"     = "#332",  
+  "NAIVE 1"          = "#28CCEE", 
+  "NAIVE 2"          = "#149", 
+  "Early-Activation" = "#117733", 
+  "IgD+ve Memory"    = "#999933", 
+  "IgD-ve Memory"    = "#D06677", 
+  "HSP+"             = "#E71133",  
+  "DN2"              = "blue",  
+  "ASC 1"            = "#882255",  
+  "ASC 2"            = "#AAAAA9", 
+  "ASC 3"            = "#CC3311",  
+  "Cell-Cycling"     = "#661176"
+)
+
+celltype_order <- names(celltype_cols)
+
+seurat_cluster_cols <- c(
+  "0"  = "#E69F00",
+  "1"  = "#56B4E9",
+  "2"  = "#009E73",
+  "3"  = "#F0E442",
+  "4"  = "#0072B2",
+  "5"  = "#D55E00",
+  "6"  = "#999933",
+  "7"  = "#999999",
+  "8"  = "#882255",
+  "9"  = "#AA4499",
+  "10" = "#6699CC",
+  "11" = "#117733"
+)
+```
+
+
+```{r}
+############################
+## 3. Helper functions
+############################
+
+get_assay_counts <- function(seu, assay = "RNA") {
+  mat <- tryCatch(
+    {
+      GetAssayData(seu, assay = assay, layer = "counts")
+    },
+    error = function(e) {
+      GetAssayData(seu, assay = assay, slot = "counts")
+    }
+  )
+
+  as(mat, "dgCMatrix")
+}
+
+save_plot <- function(p, filename, width = 7, height = 6) {
+  ggsave(
+    filename = file.path(fig_dir, filename),
+    plot = p,
+    width = width,
+    height = height,
+    dpi = 300,
+    bg = "white"
+  )
+}
+
+is_receptor_gene_symbol <- function(gene_symbol) {
+  gene_symbol <- as.character(gene_symbol)
+
+  receptor_patterns <- c(
+    "^IGHV", "^IGHD[0-9]", "^IGHJ", "^IGHC",
+    "^IGHA[0-9]*$", "^IGHG[0-9]*$", "^IGHM$", "^IGHD$", "^IGHE$",
+    "^IGKV", "^IGKJ", "^IGKC$",
+    "^IGLV", "^IGLJ", "^IGLC[0-9]*$",
+    "^TRAV", "^TRAJ", "^TRAC$",
+    "^TRBV", "^TRBD", "^TRBJ", "^TRBC[0-9]*$",
+    "^TRGV", "^TRGJ", "^TRGC[0-9]*$",
+    "^TRDV", "^TRDD", "^TRDJ", "^TRDC$"
+  )
+
+  grepl(
+    paste(receptor_patterns, collapse = "|"),
+    gene_symbol
+  )
+}
+
+marker_to_gene_ids <- function(cds, genes) {
+  rd <- as.data.frame(rowData(cds)) %>%
+    rownames_to_column("gene_id")
+
+  if (!"gene_short_name" %in% colnames(rd)) {
+    rd$gene_short_name <- rd$gene_id
+  }
+
+  ids <- rd$gene_id[rd$gene_id %in% genes | rd$gene_short_name %in% genes]
+  unique(ids)
+}
+
+score_genes_cds <- function(cds, genes) {
+  gene_ids <- marker_to_gene_ids(cds, genes)
+
+  if (length(gene_ids) == 0) {
+    warning("None of the marker genes were found: ", paste(genes, collapse = ", "))
+    score <- rep(0, ncol(cds))
+    names(score) <- colnames(cds)
+    return(score)
+  }
+
+  cnt_all <- SingleCellExperiment::counts(cds)
+  lib_size <- Matrix::colSums(cnt_all)
+  lib_size[lib_size == 0] <- 1
+
+  cnt_sub <- cnt_all[gene_ids, , drop = FALSE]
+  norm_sub <- t(t(cnt_sub) / lib_size * 1e4)
+
+  score <- Matrix::colMeans(log1p(norm_sub))
+  score <- as.numeric(score)
+  names(score) <- colnames(cds)
+
+  score
+}
+
+get_root_pr_node <- function(cds, root_cells, reduction_method = "UMAP") {
+  root_cells <- intersect(root_cells, colnames(cds))
+
+  if (length(root_cells) == 0) {
+    stop("No overlap between root_cells and cells in cds.")
+  }
+
+  closest_vertex <- cds@principal_graph_aux[[reduction_method]]$pr_graph_cell_proj_closest_vertex
+  closest_vertex <- as.matrix(closest_vertex)
+  closest_vertex <- closest_vertex[colnames(cds), , drop = FALSE]
+
+  closest <- closest_vertex[root_cells, 1]
+  root_node_raw <- names(sort(table(closest), decreasing = TRUE))[1]
+
+  graph_obj <- principal_graph(cds)[[reduction_method]]
+  vertex_names <- igraph::V(graph_obj)$name
+
+  if (root_node_raw %in% vertex_names) {
+    return(root_node_raw)
+  }
+
+  root_num <- suppressWarnings(as.numeric(root_node_raw))
+
+  if (!is.na(root_num) && root_num <= length(vertex_names)) {
+    return(vertex_names[root_num])
+  }
+
+  root_node_raw
+}
+```
+
+
+```{r}
+############################
+## 4. Load Seurat object and extract EW2
+############################
+
+seu <- readRDS(seurat_rds)
+
+cat("Total cells in Seurat object:", ncol(seu), "\n")
+cat("Available assays:", paste(SeuratObject::Assays(seu), collapse = ", "), "\n")
+
+DefaultAssay(seu) <- assay_use
+
+if (sample_col %in% colnames(seu@meta.data)) {
+  sample_values <- as.character(seu@meta.data[[sample_col]])
+
+  if (target_sample %in% sample_values) {
+    seu_ew2 <- subset(
+      seu,
+      cells = colnames(seu)[sample_values == target_sample]
+    )
+  } else {
+    message("target_sample not found in orig.ident. Using the full Seurat object.")
+    seu_ew2 <- seu
+  }
+
+} else {
+  message("sample_col not found in metadata. Using the full Seurat object.")
+  seu_ew2 <- seu
+}
+
+cat("Cells used for Monocle3:", ncol(seu_ew2), "\n")
+
+DefaultAssay(seu_ew2) <- assay_use
+
+if (inherits(seu_ew2[[assay_use]], "Assay5")) {
+  seu_ew2[[assay_use]] <- JoinLayers(seu_ew2[[assay_use]])
+}
+
+if (celltype_col %in% colnames(seu_ew2@meta.data)) {
+  seu_ew2@meta.data[[celltype_col]] <- factor(
+    as.character(seu_ew2@meta.data[[celltype_col]]),
+    levels = celltype_order
+  )
+}
+
+saveRDS(
+  seu_ew2,
+  file.path(rds_dir, "EW2_seurat_for_monocle3.rds")
+)
+
+
+############################
+## 5. Build Monocle3 cell_data_set
+############################
+
+counts_mat <- get_assay_counts(seu_ew2, assay = assay_use)
+
+gene_metadata <- data.frame(
+  gene_short_name = rownames(counts_mat),
+  row.names = rownames(counts_mat)
+)
+
+cell_metadata_full <- seu_ew2@meta.data
+
+## Remove BCR/TCR or receptor-derived metadata before trajectory inference
+bcr_like_cols <- c(
+  "clone_id", "cloneId", "clone", "clonotype", "CloneID",
+  "clone_subgroup_id", "sub_clone_id",
+  "isotype", "c_call", "constant_call",
+  "v_call", "j_call", "d_call",
+  "cdr3", "cdr3_aa", "junction", "junction_aa",
+  "shm", "SHM", "mu_freq", "v_mutation_rate", "v_identity",
+  "clone_size", "clone_expanded",
+  "productive", "locus", "sequence_id"
+)
+
+bcr_like_cols_present <- intersect(
+  bcr_like_cols,
+  colnames(cell_metadata_full)
+)
+
+message("BCR/TCR-like metadata removed before trajectory inference:")
+print(bcr_like_cols_present)
+
+cell_metadata <- cell_metadata_full[
+  ,
+  setdiff(colnames(cell_metadata_full), bcr_like_cols_present),
+  drop = FALSE
+]
+
+cell_metadata$seurat_cluster <- as.character(Idents(seu_ew2))
+
+if (celltype_col %in% colnames(cell_metadata)) {
+  cell_metadata[[celltype_col]] <- factor(
+    as.character(cell_metadata[[celltype_col]]),
+    levels = celltype_order
+  )
+}
+
+cds <- new_cell_data_set(
+  expression_data = counts_mat,
+  cell_metadata = cell_metadata,
+  gene_metadata = gene_metadata
+)
+
+cds <- detect_genes(cds)
+
+saveRDS(
+  cds,
+  file.path(rds_dir, "EW2_cds_expression_only_raw.rds")
+)
+```
+
+
+```{r}
+############################
+## 6. Select trajectory genes
+############################
+
+rd <- as.data.frame(rowData(cds)) %>%
+  rownames_to_column("gene_id")
+
+if (!"gene_short_name" %in% colnames(rd)) {
+  rd$gene_short_name <- rd$gene_id
+}
+
+expressed_genes <- rd %>%
+  filter(num_cells_expressed >= min_cells_expressed)
+
+if (exclude_receptor_genes) {
+  expressed_genes <- expressed_genes %>%
+    mutate(is_receptor_gene = is_receptor_gene_symbol(gene_short_name))
+
+  receptor_genes_removed <- expressed_genes %>%
+    filter(is_receptor_gene)
+
+  trajectory_genes <- expressed_genes %>%
+    filter(!is_receptor_gene) %>%
+    pull(gene_id)
+
+  write_csv(
+    receptor_genes_removed,
+    file.path(tab_dir, "EW2_receptor_genes_removed_from_trajectory_features.csv")
+  )
+
+} else {
+  trajectory_genes <- expressed_genes$gene_id
+}
+
+cat("Number of expressed genes:", nrow(expressed_genes), "\n")
+cat("Number of trajectory genes used by Monocle3:", length(trajectory_genes), "\n")
+
+if (length(trajectory_genes) < 500) {
+  stop("Too few trajectory genes. Please check gene symbols or filtering threshold.")
+}
+
+write_csv(
+  tibble(gene_id = trajectory_genes),
+  file.path(tab_dir, "EW2_trajectory_genes_expression_only.csv")
+)
+```
+
+
+```{r}
+############################
+## 7. Monocle3 preprocessing and dimensionality reduction
+############################
+
+cds <- preprocess_cds(
+  cds,
+  num_dim = 100,
+  method = "PCA",
+  norm_method = "log",
+  use_genes = trajectory_genes
+)
+
+p_pc_var <- plot_pc_variance_explained(cds) +
+  ggtitle("Monocle3 PCA variance explained")
+
+save_plot(
+  p_pc_var,
+  "EW2_monocle3_pc_variance_explained.png",
+  width = 7,
+  height = 5
+)
+
+## Monocle3 default UMAP settings
+cds <- reduce_dimension(cds)
+
+saveRDS(
+  cds,
+  file.path(rds_dir, "EW2_cds_expression_only_after_preprocess_umap_default.rds")
+)
+
+
+############################
+## 8. Clustering and graph learning
+############################
+
+## Monocle3 default clustering settings
+cds <- cluster_cells(cds)
+
+## Monocle3 default graph-learning settings
+cds <- learn_graph(cds)
+
+saveRDS(
+  cds,
+  file.path(rds_dir, "EW2_cds_expression_only_after_learn_graph_before_order_default.rds")
+)
+
+
+############################
+## 9. Plot trajectory graph before ordering
+############################
+
+p_cluster <- plot_cells(
+  cds,
+  color_cells_by = "seurat_cluster",
+  label_groups_by_cluster = FALSE,
+  label_leaves = TRUE,
+  label_branch_points = TRUE,
+  show_trajectory_graph = TRUE
+) +
+  scale_color_manual(values = seurat_cluster_cols, na.value = "grey80") +
+  ggtitle("EW2 Monocle3 graph coloured by Seurat clusters")
+
+save_plot(
+  p_cluster,
+  "EW2_monocle3_graph_by_seurat_cluster.png",
+  width = 7,
+  height = 6
+)
+
+p_monocle_cluster <- plot_cells(
+  cds,
+  color_cells_by = "cluster",
+  label_groups_by_cluster = TRUE,
+  label_leaves = TRUE,
+  label_branch_points = TRUE,
+  show_trajectory_graph = TRUE
+) +
+  scale_color_viridis_d(option = "cividis") +
+  ggtitle("EW2 Monocle3 clusters")
+
+save_plot(
+  p_monocle_cluster,
+  "EW2_monocle3_graph_by_monocle_cluster.png",
+  width = 7,
+  height = 6
+)
+
+p_partition <- plot_cells(
+  cds,
+  color_cells_by = "partition",
+  label_groups_by_cluster = FALSE,
+  label_leaves = TRUE,
+  label_branch_points = TRUE,
+  show_trajectory_graph = TRUE
+) +
+  scale_color_viridis_d(option = "cividis") +
+  ggtitle("EW2 Monocle3 partitions")
+
+save_plot(
+  p_partition,
+  "EW2_monocle3_graph_by_partition.png",
+  width = 7,
+  height = 6
+)
+
+if (!is.null(celltype_col) && celltype_col %in% colnames(colData(cds))) {
+  p_celltype_before_order <- plot_cells(
+    cds,
+    color_cells_by = celltype_col,
+    label_cell_groups = FALSE,
+    label_leaves = TRUE,
+    label_branch_points = TRUE,
+    show_trajectory_graph = TRUE
+  ) +
+    scale_color_manual(values = celltype_cols, na.value = "grey80") +
+    ggtitle("EW2 Monocle3 graph coloured by annotated B-cell states")
+
+  save_plot(
+    p_celltype_before_order,
+    "EW2_monocle3_graph_by_celltype_before_order.png",
+    width = 8,
+    height = 6
+  )
+}
+
+p_principal_points <- plot_cells(
+  cds,
+  color_cells_by = "seurat_cluster",
+  label_groups_by_cluster = FALSE,
+  label_principal_points = TRUE,
+  label_leaves = TRUE,
+  label_branch_points = TRUE,
+  show_trajectory_graph = TRUE
+) +
+  scale_color_manual(values = seurat_cluster_cols, na.value = "grey80") +
+  ggtitle("EW2 Monocle3 principal graph points")
+
+save_plot(
+  p_principal_points,
+  "EW2_monocle3_principal_points_for_root_selection.png",
+  width = 8,
+  height = 6
+)
+```
+
+
+```{r}
+############################
+## 10. Expression-only root selection
+############################
+
+cd_meta <- as.data.frame(colData(cds))
+
+root_candidates <- character(0)
+
+## Option A: use annotated naive-like and transitional B-cell states
+if (!is.null(celltype_col) && celltype_col %in% colnames(cd_meta)) {
+  root_celltypes <- c(
+    "Transitional",
+    "NAIVE 1",
+    "NAIVE 2"
+  )
+
+  root_candidates <- rownames(cd_meta)[
+    as.character(cd_meta[[celltype_col]]) %in% root_celltypes
+  ]
+
+  message("Root candidates from annotated early B-cell states: ", length(root_candidates))
+}
+
+## Option B: use expression-only marker score if too few root candidates
+if (length(root_candidates) < min_root_cells) {
+  naive_score <- score_genes_cds(cds, naive_root_markers)
+  plasma_score <- score_genes_cds(cds, plasma_markers)
+  activated_score <- score_genes_cds(cds, activated_markers)
+
+  root_score <- naive_score - plasma_score - 0.5 * activated_score
+
+  colData(cds)$expr_naive_score <- naive_score[colnames(cds)]
+  colData(cds)$expr_plasma_score <- plasma_score[colnames(cds)]
+  colData(cds)$expr_activated_score <- activated_score[colnames(cds)]
+  colData(cds)$expr_root_score <- root_score[colnames(cds)]
+
+  n_select <- min(
+    max(min_root_cells, ceiling(root_cell_fraction * ncol(cds))),
+    ncol(cds)
+  )
+
+  root_candidates <- names(sort(root_score, decreasing = TRUE))[seq_len(n_select)]
+
+  message("Root candidates from expression-only marker score: ", length(root_candidates))
+}
+
+write_csv(
+  tibble(cell = root_candidates),
+  file.path(tab_dir, "EW2_monocle3_root_candidate_cells.csv")
+)
+
+if ("expr_root_score" %in% colnames(colData(cds))) {
+  p_root_score <- plot_cells(
+    cds,
+    color_cells_by = "expr_root_score",
+    label_groups_by_cluster = FALSE,
+    label_leaves = TRUE,
+    label_branch_points = TRUE,
+    show_trajectory_graph = TRUE
+  ) +
+    scale_color_viridis_c(option = "cividis", na.value = "grey85") +
+    ggtitle("EW2 expression-only root score")
+
+  save_plot(
+    p_root_score,
+    "EW2_monocle3_expression_only_root_score.png",
+    width = 7,
+    height = 6
+  )
+}
+```
+
+
+```{r}
+############################
+## 11. Order cells
+############################
+root_pr_node <- get_root_pr_node(cds, root_candidates)
+
+cds <- order_cells(
+  cds,
+  root_pr_nodes = root_pr_node
+)
+
+message("Selected expression-only root principal node: ", root_pr_node)
+
+cds <- order_cells(
+  cds,
+  reduction_method = "UMAP",
+  root_pr_nodes = root_pr_node
+)
+
+pt <- pseudotime(cds)
+pt[is.infinite(pt)] <- NA
+colData(cds)$pseudotime <- pt
+
+saveRDS(
+  cds,
+  file.path(rds_dir, "EW2_cds_expression_only_ordered.rds")
+)
+
+
+############################
+## 12. Final Monocle3 visualisations
+############################
+
+p_pseudotime <- plot_cells(
+  cds,
+  color_cells_by = "pseudotime",
+  label_cell_groups = FALSE,
+  label_leaves = TRUE,
+  label_branch_points = TRUE,
+  show_trajectory_graph = TRUE
+) +
+  scale_color_viridis_c(option = "cividis", na.value = "grey85") +
+  ggtitle("EW2 Monocle3 pseudotime")
+
+save_plot(
+  p_pseudotime,
+  "EW2_monocle3_pseudotime.png",
+  width = 7,
+  height = 6
+)
+
+p_seurat_cluster <- plot_cells(
+  cds,
+  color_cells_by = "seurat_cluster",
+  label_cell_groups = FALSE,
+  label_leaves = TRUE,
+  label_branch_points = TRUE,
+  show_trajectory_graph = TRUE
+) +
+  scale_color_manual(values = seurat_cluster_cols, na.value = "grey80") +
+  ggtitle("EW2 Monocle3 trajectory coloured by Seurat clusters")
+
+save_plot(
+  p_seurat_cluster,
+  "EW2_monocle3_trajectory_by_seurat_cluster.png",
+  width = 7,
+  height = 6
+)
+
+if (!is.null(celltype_col) && celltype_col %in% colnames(colData(cds))) {
+  p_celltype <- plot_cells(
+    cds,
+    color_cells_by = celltype_col,
+    label_cell_groups = FALSE,
+    label_leaves = TRUE,
+    label_branch_points = TRUE,
+    show_trajectory_graph = TRUE
+  ) +
+    scale_color_manual(values = celltype_cols, na.value = "grey80") +
+    ggtitle("EW2 Monocle3 trajectory coloured by annotated B-cell states")
+
+  save_plot(
+    p_celltype,
+    "EW2_monocle3_trajectory_by_celltype.png",
+    width = 8,
+    height = 6
+  )
+}
+
+cell_meta_monocle3 <- as.data.frame(colData(cds)) %>%
+  rownames_to_column("cell") %>%
+  arrange(pseudotime)
+
+write_csv(
+  cell_meta_monocle3,
+  file.path(tab_dir, "EW2_monocle3_cell_metadata_with_pseudotime.csv")
+)
+```
+
+
+```{r}
+saveRDS(
+  cds,
+  file.path(rds_dir, "EW2_MONOCLE3_EXPRESSION_ONLY_FINAL.rds")
+)
+
+cat("Monocle3 expression-only trajectory reconstruction completed.\n")
+cat("Figures saved to:", fig_dir, "\n")
+cat("Tables saved to:", tab_dir, "\n")
+cat("RDS files saved to:", rds_dir, "\n")
+```
+
